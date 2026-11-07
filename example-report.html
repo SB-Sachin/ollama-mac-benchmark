@@ -1,0 +1,463 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ollama model benchmark</title>
+<style>
+:root {
+  color-scheme: light dark;
+  --font-anthropic-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-anthropic-serif: ui-serif, Georgia, "Times New Roman", serif;
+  --color-fg: #1f1e1d; --color-fg-muted: #6b6a68; --color-bg: #faf9f7; --color-panel: #ffffff;
+  --color-border-line: #e3e1dc; --color-bad: #c0392b; --bm-accent-base: #2b6cb0;
+  --cds-font-size-caption: 0.75rem; --cds-font-size-body: 0.875rem; --cds-font-size-heading: 1rem; --cds-font-size-title: 1.75rem;
+  --cds-font-weight-medium: 500; --cds-radius: 8px;
+  --cds-pad-xs: 4px; --cds-pad-sm: 8px; --cds-pad-md: 12px; --cds-pad-lg: 16px;
+  --cds-gap-xs: 4px; --cds-gap-sm: 8px; --cds-gap-md: 12px; --cds-gap-lg: 20px;
+  --cds-surface-popover: #ffffff; --cds-border: #d4d1ca; --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.14);
+  --cds-text-secondary: #6b6a68; --cds-dur-slow: 0.3s;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-fg: #ece9e3; --color-fg-muted: #a09d96; --color-bg: #1b1a19; --color-panel: #262523;
+    --color-border-line: #3a3835; --color-bad: #e0685a; --bm-accent-base: #7fb2f0;
+    --cds-surface-popover: #2f2d2b; --cds-border: #47443f; --cds-text-secondary: #a09d96;
+    --cds-shadow-popover: 0 4px 16px rgba(0,0,0,.5);
+  }
+}
+body { margin: 0; background: var(--color-bg); color: var(--color-fg); font-family: var(--font-anthropic-sans); padding: clamp(12px, 3vw, 32px); }
+.bm { container-type: inline-size; max-width: 64rem; margin-inline: auto; font-family: var(--font-anthropic-sans); color: var(--color-fg); display: flex; flex-direction: column; gap: var(--cds-gap-lg); }
+.bm-title { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); margin: 0 0 var(--cds-gap-xs); line-height: 1.2; }
+.bm-lead { margin: 0; font-size: var(--cds-font-size-body); line-height: 1.5; max-width: 46rem; }
+.bm-sub { margin: 0 0 var(--cds-gap-sm); color: var(--color-fg-muted); font-size: var(--cds-font-size-body); }
+.bm-card { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: flex; flex-direction: column; gap: var(--cds-gap-sm); min-width: 0; }
+.bm-h2 { font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); margin: 0; }
+.bm-note { margin: 0; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.bm-three { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: var(--cds-gap-md); }
+.bm-host { position: relative; min-height: 6rem; font-variant-numeric: tabular-nums; }
+.bm-grid { display: grid; grid-template-columns: minmax(5.2rem, 9rem) repeat(var(--cols), minmax(0, 1fr)); gap: 3px; align-items: stretch; }
+.bm-gh { font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); padding: 2px 1px 6px; text-align: center; align-self: end; line-height: 1.2; overflow-wrap: anywhere; }
+.bm-gn { font-size: var(--cds-font-size-caption); padding: 4px 6px 4px 0; display: flex; align-items: center; overflow-wrap: anywhere; line-height: 1.2; }
+.bm-c { min-height: 2.75rem; border-radius: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; font-size: var(--cds-font-size-caption); border: 1px solid var(--color-border-line); padding: 2px; cursor: default; text-align: center; }
+.bm-c:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 1px; }
+.bm-all { background: color-mix(in srgb, var(--bm-accent) 20%, transparent); }
+.bm-some { background: color-mix(in srgb, var(--bm-accent) 8%, transparent); }
+.bm-tot { display: flex; align-items: center; justify-content: center; font-size: var(--cds-font-size-caption); font-weight: var(--cds-font-weight-medium); }
+.bm-dots { display: flex; gap: 4px; }
+.bm-dot { display: inline-block; width: 0.625rem; height: 0.625rem; border-radius: 50%; box-sizing: border-box; border: 1.5px solid var(--color-fg-muted); background: transparent; }
+.bm-dot.on { background: var(--bm-accent); border-color: var(--bm-accent); }
+.bm-legend { display: flex; flex-wrap: wrap; gap: var(--cds-gap-xs) var(--cds-gap-md); align-items: center; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.bm-legend > span { display: inline-flex; align-items: center; gap: 4px; }
+.bm-ramp { display: inline-block; width: 5rem; height: 0.625rem; border-radius: 3px; border: 1px solid var(--color-border-line); background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--bm-accent) 40%, transparent)); }
+.bm-bars { display: flex; flex-direction: column; gap: 8px; }
+.bm-bar { display: grid; grid-template-columns: minmax(5.2rem, 8rem) minmax(0, 1fr) auto; align-items: center; gap: 4px 8px; font-size: var(--cds-font-size-caption); }
+.bm-bl { overflow-wrap: anywhere; line-height: 1.2; }
+.bm-track { height: 14px; border-radius: 0 4px 4px 0; }
+.bm-track.full { background: color-mix(in srgb, var(--color-fg) 8%, transparent); }
+.bm-fill { height: 100%; background: var(--bm-accent); border-radius: 0 4px 4px 0; min-width: 2px; }
+.bm-bv { min-width: 4.5rem; text-align: right; }
+.bm-bnull, .bm-bnote { grid-column: 2 / 4; color: var(--color-fg-muted); line-height: 1.3; }
+.bm-bnote { margin-top: -2px; }
+.bm-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 16rem), 1fr)); gap: var(--cds-gap-md); }
+.bm-mc { border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-md); display: flex; flex-direction: column; gap: 8px; background: var(--color-bg); min-width: 0; }
+.bm-mc-name { font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); overflow-wrap: anywhere; }
+.bm-score { display: flex; align-items: baseline; gap: 6px; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+.bm-big { font-family: var(--font-anthropic-serif); font-size: var(--cds-font-size-title); font-weight: 400; color: var(--color-fg); line-height: 1; }
+.bm-segs { display: flex; gap: 2px; }
+.bm-seg { flex: 1; height: 8px; border-radius: 2px; background: var(--color-border-line); }
+.bm-seg.on { background: var(--bm-accent); }
+.bm-dl { display: grid; grid-template-columns: 1fr auto; gap: 3px 8px; margin: 0; font-size: var(--cds-font-size-caption); }
+.bm-dl dt { color: var(--color-fg-muted); }
+.bm-dl dd { margin: 0; text-align: right; }
+.bm-verdict { border-top: 1px solid var(--color-border-line); padding-top: 8px; margin: 0; font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.bm-tasks { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 15rem), 1fr)); gap: var(--cds-gap-md); }
+.bm-task { display: flex; flex-direction: column; gap: 2px; font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.bm-task-n { font-weight: var(--cds-font-weight-medium); font-size: var(--cds-font-size-body); }
+.bm-list { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: 4px; font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.bm-tip { position: absolute; z-index: 5; pointer-events: none; max-width: min(18rem, 100%); background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); line-height: 1.4; }
+.bm-tip[hidden], .bm [hidden] { display: none !important; }
+.bm-tip-t { color: var(--cds-text-secondary); }
+.bm-fail { min-height: 6rem; display: flex; align-items: center; justify-content: center; gap: 0.5rem; color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+.bm-faildot { width: 0.375rem; height: 0.375rem; border-radius: 50%; background: var(--color-bad); display: inline-block; }
+[data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+@container (max-width: 30rem) {
+  .bm-grid { grid-template-columns: repeat(var(--cols), minmax(0, 1fr)); gap: 2px; }
+  .bm-grid > .bm-gh:first-child { display: none; }
+  .bm-gn { grid-column: 1 / -1; padding: 10px 0 2px; font-size: var(--cds-font-size-caption); font-weight: var(--cds-font-weight-medium); }
+  .bm-gh, .bm-c, .bm-tot { font-size: 0.6875rem; }
+  .bm-gh { position: sticky; top: 0; background: var(--color-panel); z-index: 1; padding-bottom: 4px; }
+  .bm-c { min-height: 2.5rem; }
+  .bm-dot { width: 0.5rem; height: 0.5rem; }
+  .bm-dots { gap: 3px; }
+}
+</style>
+</head>
+<body>
+<div class="bm" id="top">
+  <header>
+    <h1 class="bm-title">Which local model is best?</h1>
+    <p class="bm-sub">Your Ollama models, tested on your Apple M6 with 32 GB. Six tasks each.</p>
+    <p class="bm-lead">qwen2.5:7b, llama3.1:8b and gemma3:12b got every answer right. Of the three, qwen2.5:7b writes fastest. llama3.2:1b is the quickest model but misses the hard tasks. The 27B model is the largest and waits longest on long text.</p>
+  </header>
+
+  <section class="bm-card" id="right-answers">
+    <h2 class="bm-h2">Right answers by task</h2>
+    <p class="bm-note">Each task ran twice. Dots show how many runs were right. Tap or hover a cell for more.</p>
+    <div class="bm-host dash-skeleton" data-draw="grid-right" data-source="models task_scores"></div>
+    <div class="bm-legend">
+      <span><i class="bm-dot on"></i><i class="bm-dot on"></i> Both runs right</span>
+      <span><i class="bm-dot on"></i><i class="bm-dot"></i> One run right</span>
+      <span><i class="bm-dot"></i><i class="bm-dot"></i> Neither right</span>
+    </div>
+  </section>
+
+  <section class="bm-card" id="time-by-task">
+    <h2 class="bm-h2">Time to finish each task</h2>
+    <p class="bm-note">Average seconds per task. A darker cell is slower within its task. The longer the answer, the longer the wait.</p>
+    <div class="bm-host dash-skeleton" data-draw="grid-time" data-source="models task_scores"></div>
+    <div class="bm-legend">
+      <span>Faster <i class="bm-ramp"></i> Slower</span>
+      <span>† A run stopped at the length limit</span>
+    </div>
+  </section>
+
+  <div class="bm-three">
+    <section class="bm-card" id="speed">
+      <h2 class="bm-h2">Writing speed</h2>
+      <p class="bm-note">Words written per second. A longer bar is faster.</p>
+      <div class="bm-host dash-skeleton" data-draw="bars-speed" data-source="models"></div>
+    </section>
+    <section class="bm-card" id="long-wait">
+      <h2 class="bm-h2">Wait on a long document</h2>
+      <p class="bm-note">Seconds before the first word appears after you paste a long log. A shorter bar is better.</p>
+      <div class="bm-host dash-skeleton" data-draw="bars-wait" data-source="models"></div>
+    </section>
+    <section class="bm-card" id="memory">
+      <h2 class="bm-h2">Memory use</h2>
+      <p class="bm-note">How much of your Mac's memory each model fills while loaded. The grey track is all of your memory.</p>
+      <div class="bm-host dash-skeleton" data-draw="bars-memory" data-source="models"></div>
+    </section>
+    <section class="bm-card" id="temp" hidden>
+      <h2 class="bm-h2">Chip temperature</h2>
+      <p class="bm-note">Highest chip temperature during each model's runs, in degrees Celsius. A shorter bar is cooler.</p>
+      <div class="bm-host dash-skeleton" data-draw="bars-temp" data-source="models"></div>
+    </section>
+  </div>
+
+  <section class="bm-card" id="details">
+    <h2 class="bm-h2">Each model in detail</h2>
+    <p class="bm-note">Squares show answers right out of the eight scored runs.</p>
+    <div class="bm-host dash-skeleton" data-draw="cards" data-source="models"></div>
+  </section>
+
+  <section class="bm-card" id="tasks">
+    <h2 class="bm-h2">What each task asked</h2>
+    <div class="bm-tasks">
+      <div class="bm-task"><span class="bm-task-n">Quick question</span><span>Explain unified memory in two sentences. Not scored. Timed only.</span></div>
+      <div class="bm-task"><span class="bm-task-n">Word problem</span><span>Two trains leave a station at different times and speeds. When does the second one catch the first? Checked against the right time.</span></div>
+      <div class="bm-task"><span class="bm-task-n">Write code</span><span>Write a Python function to check whether brackets are balanced. Checked against eight test cases.</span></div>
+      <div class="bm-task"><span class="bm-task-n">Follow rules</span><span>Write five bullets under twelve words each, with no commas. Checked by a script.</span></div>
+      <div class="bm-task"><span class="bm-task-n">Long log search</span><span>Find the access code in Entry 87 of a long log. Checked against the real code.</span></div>
+      <div class="bm-task"><span class="bm-task-n">Write essay</span><span>Write a 600 word essay on how a heat sink and fan work. Not scored. Each model ran once.</span></div>
+    </div>
+  </section>
+
+  <section class="bm-card" id="notes">
+    <h2 class="bm-h2">Notes</h2>
+    <ul class="bm-list">
+      <li>Chip temperature was not recorded. macOS shares no chip temperature without an extra tool. macOS logged no heat or slowdown warnings during the run. Fan use during your rests was not measured, so no adjustment was made.</li>
+      <li>Models ran in a fixed mode with no randomness, so repeat runs match.</li>
+      <li>Words per second equals tokens per second times 0.75. Treat words as an estimate.</li>
+      <li>moondream reads images. Its answers ran one to six words, so no speed or long log time is shown.</li>
+      <li>llama3:latest and llama3:8b have the same size and settings and scored the same. Treat them as one model.</li>
+    </ul>
+  </section>
+</div>
+
+<script type="application/json" id="bm-data">{"models":[{"model":"llama3.2:1b","size_gb":1.32,"loaded_gb":1.73,"ram_gb":32,"compression":"Q8_0","cold_load_s":0.81,"words_per_s":84.3,"quality":3,"quality_max":8,"wait_long_s":0.7,"wait_short_s":0.04,"min_free_pct":87,"swap_mb":0.0,"verdict":"Fastest by far. Misses the word problem and the long log search. Use for quick, simple questions only."},{"model":"moondream:latest","size_gb":1.74,"loaded_gb":1.29,"ram_gb":32,"compression":"Q4_0","cold_load_s":0.78,"words_per_s":null,"quality":1,"quality_max":8,"wait_long_s":null,"wait_short_s":0.07,"min_free_pct":86,"swap_mb":0.0,"verdict":"Built to read images, not text. Gave one to six word answers. Skip for these tasks."},{"model":"llama3:latest","size_gb":4.66,"loaded_gb":5.69,"ram_gb":32,"compression":"Q4_0","cold_load_s":1.31,"words_per_s":25.1,"quality":4,"quality_max":8,"wait_long_s":5.1,"wait_short_s":0.17,"min_free_pct":76,"swap_mb":0.0,"verdict":"Same model as llama3:8b under another name. Good at code and rules. Fails the word problem and the long log search."},{"model":"llama3:8b","size_gb":4.66,"loaded_gb":5.69,"ram_gb":32,"compression":"Q4_0","cold_load_s":0.56,"words_per_s":25.0,"quality":4,"quality_max":8,"wait_long_s":5.1,"wait_short_s":0.13,"min_free_pct":76,"swap_mb":0.0,"verdict":"Same model as llama3:latest under another name. Good at code and rules. Fails the word problem and the long log search."},{"model":"qwen2.5:7b","size_gb":4.68,"loaded_gb":5.15,"ram_gb":32,"compression":"Q4_K_M","cold_load_s":1.31,"words_per_s":25.3,"quality":8,"quality_max":8,"wait_long_s":5.9,"wait_short_s":0.15,"min_free_pct":77,"swap_mb":0.0,"verdict":"Every answer right and the fastest writer of the three that got everything right. Best all-round pick."},{"model":"llama3.1:8b","size_gb":4.92,"loaded_gb":5.95,"ram_gb":32,"compression":"Q4_K_M","cold_load_s":1.56,"words_per_s":23.8,"quality":8,"quality_max":8,"wait_long_s":5.4,"wait_short_s":0.13,"min_free_pct":75,"swap_mb":0.0,"verdict":"Every answer right. Close to qwen2.5:7b in speed. Starts on the long log a little sooner."},{"model":"gemma3:12b","size_gb":8.16,"loaded_gb":7.54,"ram_gb":32,"compression":"Q4_K_M","cold_load_s":2.59,"words_per_s":14.6,"quality":8,"quality_max":8,"wait_long_s":8.6,"wait_short_s":0.26,"min_free_pct":63,"swap_mb":0.0,"verdict":"Every answer right, but writes slower and waits longer on the long log than the 7B and 8B models."},{"model":"qwen3.8:27b-mlx","size_gb":18.17,"loaded_gb":18.49,"ram_gb":32,"compression":"nvfp4","cold_load_s":6.32,"words_per_s":16.6,"quality":7,"quality_max":8,"wait_long_s":14.3,"wait_short_s":0.83,"min_free_pct":21,"swap_mb":527.0,"verdict":"Biggest model. Longest wait on the long log and the most memory in use. Writes faster than gemma3:12b. Its one miss came from running out of room to finish, not from a wrong answer."}],"task_scores":[{"model":"llama3.2:1b","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":0.47,"avg_words":37,"words_per_s":85.6,"hit_limit":0},{"model":"llama3.2:1b","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":0,"avg_s":2.34,"avg_words":195,"words_per_s":84.4,"hit_limit":0},{"model":"llama3.2:1b","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":0.97,"avg_words":80,"words_per_s":84.5,"hit_limit":0},{"model":"llama3.2:1b","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":1,"avg_s":0.47,"avg_words":39,"words_per_s":85.7,"hit_limit":0},{"model":"llama3.2:1b","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":0,"avg_s":0.74,"avg_words":3,"words_per_s":null,"hit_limit":0},{"model":"llama3.2:1b","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":7.18,"avg_words":600,"words_per_s":83.9,"hit_limit":1},{"model":"moondream:latest","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":0.07,"avg_words":1,"words_per_s":null,"hit_limit":0},{"model":"moondream:latest","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":0,"avg_s":0.06,"avg_words":4,"words_per_s":null,"hit_limit":0},{"model":"moondream:latest","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":1,"avg_s":0.64,"avg_words":78,"words_per_s":127.8,"hit_limit":0},{"model":"moondream:latest","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":0,"avg_s":0.44,"avg_words":53,"words_per_s":129.2,"hit_limit":0},{"model":"moondream:latest","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":0,"avg_s":0.16,"avg_words":3,"words_per_s":null,"hit_limit":0},{"model":"moondream:latest","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":1.01,"avg_words":123,"words_per_s":127.6,"hit_limit":0},{"model":"llama3:latest","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":2.22,"avg_words":52,"words_per_s":25.3,"hit_limit":0},{"model":"llama3:latest","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":0,"avg_s":6.8,"avg_words":165,"words_per_s":25.0,"hit_limit":0},{"model":"llama3:latest","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":6.31,"avg_words":156,"words_per_s":25.2,"hit_limit":0},{"model":"llama3:latest","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":2,"avg_s":1.59,"avg_words":38,"words_per_s":25.7,"hit_limit":0},{"model":"llama3:latest","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":0,"avg_s":5.26,"avg_words":3,"words_per_s":null,"hit_limit":0},{"model":"llama3:latest","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":19.92,"avg_words":493,"words_per_s":24.9,"hit_limit":0},{"model":"llama3:8b","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":2.32,"avg_words":55,"words_per_s":25.2,"hit_limit":0},{"model":"llama3:8b","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":0,"avg_s":5.39,"avg_words":132,"words_per_s":25.1,"hit_limit":0},{"model":"llama3:8b","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":6.31,"avg_words":156,"words_per_s":25.2,"hit_limit":0},{"model":"llama3:8b","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":2,"avg_s":1.67,"avg_words":39,"words_per_s":25.6,"hit_limit":0},{"model":"llama3:8b","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":0,"avg_s":5.22,"avg_words":4,"words_per_s":null,"hit_limit":0},{"model":"llama3:8b","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":21.18,"avg_words":521,"words_per_s":24.8,"hit_limit":0},{"model":"qwen2.5:7b","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":1.57,"avg_words":37,"words_per_s":25.8,"hit_limit":0},{"model":"qwen2.5:7b","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":2,"avg_s":9.8,"avg_words":246,"words_per_s":25.5,"hit_limit":0},{"model":"qwen2.5:7b","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":4.12,"avg_words":101,"words_per_s":25.4,"hit_limit":0},{"model":"qwen2.5:7b","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":2,"avg_s":1.02,"avg_words":23,"words_per_s":null,"hit_limit":0},{"model":"qwen2.5:7b","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":2,"avg_s":6.09,"avg_words":4,"words_per_s":null,"hit_limit":0},{"model":"qwen2.5:7b","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":19.47,"avg_words":485,"words_per_s":25.1,"hit_limit":0},{"model":"llama3.1:8b","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":2.39,"avg_words":54,"words_per_s":24.1,"hit_limit":0},{"model":"llama3.1:8b","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":2,"avg_s":9.11,"avg_words":214,"words_per_s":23.9,"hit_limit":0},{"model":"llama3.1:8b","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":2.65,"avg_words":61,"words_per_s":24.1,"hit_limit":0},{"model":"llama3.1:8b","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":2,"avg_s":1.91,"avg_words":43,"words_per_s":24.2,"hit_limit":0},{"model":"llama3.1:8b","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":2,"avg_s":5.58,"avg_words":4,"words_per_s":null,"hit_limit":0},{"model":"llama3.1:8b","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":22.89,"avg_words":535,"words_per_s":23.5,"hit_limit":0},{"model":"gemma3:12b","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":2.39,"avg_words":32,"words_per_s":14.8,"hit_limit":0},{"model":"gemma3:12b","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":2,"avg_s":10.34,"avg_words":147,"words_per_s":14.7,"hit_limit":0},{"model":"gemma3:12b","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":8.06,"avg_words":114,"words_per_s":14.7,"hit_limit":0},{"model":"gemma3:12b","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":2,"avg_s":2.45,"avg_words":32,"words_per_s":14.8,"hit_limit":0},{"model":"gemma3:12b","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":2,"avg_s":8.85,"avg_words":4,"words_per_s":null,"hit_limit":0},{"model":"gemma3:12b","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":41.56,"avg_words":600,"words_per_s":14.6,"hit_limit":1},{"model":"qwen3.8:27b-mlx","task":"short_qa","task_label":"Quick question","task_order":1,"runs":2,"correct":null,"avg_s":4.47,"avg_words":48,"words_per_s":12.6,"hit_limit":0},{"model":"qwen3.8:27b-mlx","task":"reasoning","task_label":"Word problem","task_order":2,"runs":2,"correct":1,"avg_s":14.18,"avg_words":285,"words_per_s":21.1,"hit_limit":1},{"model":"qwen3.8:27b-mlx","task":"code","task_label":"Write code","task_order":3,"runs":2,"correct":2,"avg_s":3.56,"avg_words":71,"words_per_s":21.7,"hit_limit":0},{"model":"qwen3.8:27b-mlx","task":"instructions","task_label":"Follow rules","task_order":4,"runs":2,"correct":2,"avg_s":3.23,"avg_words":36,"words_per_s":12.2,"hit_limit":0},{"model":"qwen3.8:27b-mlx","task":"long_context","task_label":"Long log search","task_order":5,"runs":2,"correct":2,"avg_s":14.5,"avg_words":4,"words_per_s":null,"hit_limit":0},{"model":"qwen3.8:27b-mlx","task":"long_generation","task_label":"Write essay","task_order":6,"runs":1,"correct":null,"avg_s":42.19,"avg_words":600,"words_per_s":14.3,"hit_limit":1}]}</script>
+<script>
+/* Stand-in for the dashboard host and for d3. The page code below runs unchanged. */
+var DATA = JSON.parse(document.getElementById('bm-data').textContent);
+var dash = {
+  colors: ['var(--bm-accent-base)'],
+  data: function (id) { return { status: 'ok', data: DATA[id] }; },
+  draw: function (name, fn) { document.querySelectorAll('[data-draw="' + name + '"]').forEach(fn); }
+};
+var d3 = {
+  format: function (spec) {
+    var dec = +spec.match(/\.(\d)f/)[1], group = spec.charAt(0) === ',';
+    return function (v) { return group ? Number(v).toLocaleString('en-US', { minimumFractionDigits: dec, maximumFractionDigits: dec }) : Number(v).toFixed(dec); };
+  },
+  max: function (arr, fn) {
+    var best;
+    arr.forEach(function (x) { var v = fn ? fn(x) : x; if (v != null && !isNaN(v) && (best === undefined || v > best)) best = v; });
+    return best;
+  }
+};
+</script>
+<script>
+(function () {
+  var root = document.querySelector('.bm');
+  if (root) root.style.setProperty('--bm-accent', dash.colors[0]);
+
+  var f0 = d3.format(',.0f'), f1 = d3.format(',.1f'), f2 = d3.format('.2f');
+  var secs = function (v) { return v < 1 ? f2(v) : f1(v); };
+
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  function settle(host, ids) {
+    var state = 'ok', out = {};
+    ids.forEach(function (id) {
+      var g = dash.data(id);
+      out[id] = g.data;
+      if (g.status === 'ok') return;
+      if (g.status === 'loading') { if (state === 'ok') state = 'loading'; }
+      else state = 'error';
+    });
+    host.classList.toggle('dash-skeleton', state === 'loading');
+    if (state === 'error') {
+      var w = el('div', 'bm-fail');
+      w.append(el('i', 'bm-faildot'), document.createTextNode('Failed to load'));
+      host.replaceChildren(w);
+      return null;
+    }
+    if (state === 'loading') { host.replaceChildren(); return null; }
+    return out;
+  }
+
+  function tipper(host) {
+    var tip = el('div', 'bm-tip');
+    tip.hidden = true;
+    host.appendChild(tip);
+    var pinned = null;
+    function place(target) {
+      var hr = host.getBoundingClientRect(), tr = target.getBoundingClientRect();
+      var w = tip.offsetWidth, h = tip.offsetHeight;
+      var x = tr.left - hr.left + tr.width / 2 - w / 2;
+      x = Math.max(0, Math.min(x, host.clientWidth - w));
+      var y = tr.top - hr.top - h - 6;
+      if (y < 0) y = tr.bottom - hr.top + 6;
+      tip.style.left = x + 'px';
+      tip.style.top = y + 'px';
+    }
+    function show(target, title, lines) {
+      tip.replaceChildren(el('div', 'bm-tip-t', title));
+      lines.forEach(function (l) { tip.appendChild(el('div', null, l)); });
+      tip.hidden = false;
+      place(target);
+    }
+    function hide() { tip.hidden = true; }
+    return {
+      bind: function (target, title, lines) {
+        target.tabIndex = 0;
+        target.addEventListener('pointerenter', function () { show(target, title, lines); });
+        target.addEventListener('pointerleave', function () { if (pinned !== target) hide(); });
+        target.addEventListener('focus', function () { show(target, title, lines); });
+        target.addEventListener('blur', function () { pinned = null; hide(); });
+        target.addEventListener('click', function () { pinned = target; show(target, title, lines); });
+      }
+    };
+  }
+
+  function taskList(ts, onlyScored) {
+    var seen = new Map();
+    ts.slice().sort(function (a, b) { return a.task_order - b.task_order; }).forEach(function (r) {
+      if (onlyScored && r.correct == null) return;
+      if (!seen.has(r.task)) seen.set(r.task, r.task_label);
+    });
+    return Array.from(seen);
+  }
+
+  function limitLine(r) {
+    return r.hit_limit ? r.hit_limit + ' of ' + r.runs + ' runs stopped at the length limit' : null;
+  }
+
+  dash.draw('grid-right', function (host) {
+    var d = settle(host, ['models', 'task_scores']);
+    if (!d) return;
+    var tasks = taskList(d.task_scores, true);
+    var by = new Map(d.task_scores.map(function (r) { return [r.model + '|' + r.task, r]; }));
+    var g = el('div', 'bm-grid');
+    g.style.setProperty('--cols', tasks.length + 1);
+    g.appendChild(el('div', 'bm-gh'));
+    tasks.forEach(function (t) { g.appendChild(el('div', 'bm-gh', t[1])); });
+    g.appendChild(el('div', 'bm-gh', 'Total'));
+    host.replaceChildren(g);
+    var tip = tipper(host);
+    d.models.forEach(function (m) {
+      g.appendChild(el('div', 'bm-gn', m.model));
+      tasks.forEach(function (t) {
+        var r = by.get(m.model + '|' + t[0]);
+        var c = el('div', 'bm-c');
+        if (!r) { c.textContent = 'n/a'; g.appendChild(c); return; }
+        var right = r.correct, runs = r.runs;
+        c.classList.add(right === runs ? 'bm-all' : right > 0 ? 'bm-some' : 'bm-none');
+        var dots = el('span', 'bm-dots');
+        for (var i = 0; i < runs; i++) dots.appendChild(el('i', 'bm-dot' + (i < right ? ' on' : '')));
+        c.append(dots, el('span', null, right + ' of ' + runs));
+        c.setAttribute('aria-label', m.model + ', ' + t[1] + ': ' + right + ' of ' + runs + ' runs right');
+        var lines = [right + ' of ' + runs + ' runs right', 'Average ' + secs(r.avg_s) + ' s to finish'];
+        var ll = limitLine(r); if (ll) lines.push(ll);
+        tip.bind(c, m.model + ': ' + t[1], lines);
+        g.appendChild(c);
+      });
+      g.appendChild(el('div', 'bm-tot', m.quality + ' of ' + m.quality_max));
+    });
+  });
+
+  dash.draw('grid-time', function (host) {
+    var d = settle(host, ['models', 'task_scores']);
+    if (!d) return;
+    var tasks = taskList(d.task_scores, false);
+    var by = new Map(d.task_scores.map(function (r) { return [r.model + '|' + r.task, r]; }));
+    var colMax = {};
+    tasks.forEach(function (t) {
+      colMax[t[0]] = d3.max(d.task_scores.filter(function (r) { return r.task === t[0]; }), function (r) { return r.avg_s; });
+    });
+    var g = el('div', 'bm-grid');
+    g.style.setProperty('--cols', tasks.length);
+    g.appendChild(el('div', 'bm-gh'));
+    tasks.forEach(function (t) { g.appendChild(el('div', 'bm-gh', t[1])); });
+    host.replaceChildren(g);
+    var tip = tipper(host);
+    d.models.forEach(function (m) {
+      g.appendChild(el('div', 'bm-gn', m.model));
+      tasks.forEach(function (t) {
+        var r = by.get(m.model + '|' + t[0]);
+        var c = el('div', 'bm-c');
+        if (!r) { c.textContent = 'n/a'; g.appendChild(c); return; }
+        var pct = Math.round(40 * r.avg_s / colMax[t[0]]);
+        c.style.background = 'color-mix(in srgb, var(--bm-accent) ' + pct + '%, transparent)';
+        c.textContent = secs(r.avg_s) + ' s' + (r.hit_limit ? ' †' : '');
+        c.setAttribute('aria-label', m.model + ', ' + t[1] + ': ' + secs(r.avg_s) + ' seconds');
+        var lines = [secs(r.avg_s) + ' s on average', 'About ' + f0(r.avg_words) + ' words written'];
+        if (r.words_per_s != null) lines.push(f1(r.words_per_s) + ' words per second');
+        var ll = limitLine(r); if (ll) lines.push(ll);
+        tip.bind(c, m.model + ': ' + t[1], lines);
+        g.appendChild(c);
+      });
+    });
+  });
+
+  function bars(host, rows, max, full) {
+    var wrap = el('div', 'bm-bars');
+    host.replaceChildren(wrap);
+    var tip = tipper(host);
+    rows.forEach(function (r) {
+      var row = el('div', 'bm-bar');
+      row.appendChild(el('div', 'bm-bl', r.label));
+      if (r.value == null) {
+        row.appendChild(el('div', 'bm-bnull', r.nullText));
+      } else {
+        var t = el('div', 'bm-track' + (full ? ' full' : ''));
+        var f = el('div', 'bm-fill');
+        f.style.width = Math.min(100, 100 * r.value / max) + '%';
+        t.appendChild(f);
+        row.append(t, el('div', 'bm-bv', r.vtext));
+        if (r.note) row.appendChild(el('div', 'bm-bnote', r.note));
+      }
+      row.setAttribute('aria-label', r.label + ': ' + (r.value == null ? r.nullText : r.vtext));
+      tip.bind(row, r.label, r.tip);
+      wrap.appendChild(row);
+    });
+  }
+
+  dash.draw('bars-speed', function (host) {
+    var d = settle(host, ['models']);
+    if (!d) return;
+    var ms = d.models.slice().sort(function (a, b) { return (b.words_per_s == null ? -1 : b.words_per_s) - (a.words_per_s == null ? -1 : a.words_per_s); });
+    var max = d3.max(ms, function (m) { return m.words_per_s; });
+    bars(host, ms.map(function (m) {
+      return {
+        label: m.model, value: m.words_per_s,
+        vtext: m.words_per_s == null ? '' : f1(m.words_per_s) + ' words/s',
+        nullText: m.speed_note || 'Not timed fairly.',
+        tip: [m.words_per_s == null ? 'No fair speed' : f1(m.words_per_s) + ' words per second']
+      };
+    }), max, false);
+  });
+
+  dash.draw('bars-wait', function (host) {
+    var d = settle(host, ['models']);
+    if (!d) return;
+    var ms = d.models.slice().sort(function (a, b) { return (a.wait_long_s == null ? 1e9 : a.wait_long_s) - (b.wait_long_s == null ? 1e9 : b.wait_long_s); });
+    var max = d3.max(ms, function (m) { return m.wait_long_s; });
+    bars(host, ms.map(function (m) {
+      return {
+        label: m.model, value: m.wait_long_s,
+        vtext: m.wait_long_s == null ? '' : f1(m.wait_long_s) + ' s',
+        nullText: m.wait_note || 'No fair time.',
+        tip: [m.wait_long_s == null ? 'No fair time' : f1(m.wait_long_s) + ' seconds to the first word']
+      };
+    }), max, false);
+  });
+
+  dash.draw('bars-memory', function (host) {
+    var d = settle(host, ['models']);
+    if (!d) return;
+    var ms = d.models.slice().sort(function (a, b) { return a.loaded_gb - b.loaded_gb; });
+    bars(host, ms.map(function (m) {
+      var swapped = m.swap_mb > 0;
+      return {
+        label: m.model, value: m.loaded_gb, vtext: f1(m.loaded_gb) + ' GB',
+        note: swapped ? 'Your Mac moved ' + f0(m.swap_mb) + ' MB to disk. Free memory fell to ' + m.min_free_pct + '%.' : null,
+        tip: [f1(m.loaded_gb) + ' of ' + m.ram_gb + ' GB in use', 'Lowest free memory: ' + m.min_free_pct + '%', swapped ? 'Moved to disk: ' + f0(m.swap_mb) + ' MB' : 'Nothing moved to disk']
+      };
+    }), d3.max(ms, function (m) { return m.ram_gb; }), true);
+  });
+
+
+  dash.draw('bars-temp', function (host) {
+    var d = settle(host, ['models']);
+    if (!d) return;
+    var ms = d.models.filter(function (m) { return m.peak_temp_c != null; });
+    var sec = document.getElementById('temp');
+    if (sec) sec.hidden = ms.length === 0;
+    if (!ms.length) return;
+    ms.sort(function (a, b) { return a.peak_temp_c - b.peak_temp_c; });
+    bars(host, ms.map(function (m) {
+      return { label: m.model, value: m.peak_temp_c, vtext: f1(m.peak_temp_c) + ' \u00b0C', tip: [f1(m.peak_temp_c) + ' \u00b0C at the hottest point'] };
+    }), Math.max(100, d3.max(ms, function (m) { return m.peak_temp_c; })), false);
+  });
+
+  dash.draw('cards', function (host) {
+    var d = settle(host, ['models']);
+    if (!d) return;
+    var wrap = el('div', 'bm-cards');
+    d.models.forEach(function (m) {
+      var c = el('div', 'bm-mc');
+      c.appendChild(el('div', 'bm-mc-name', m.model));
+      var s = el('div', 'bm-score');
+      s.append(el('span', 'bm-big', String(m.quality)), el('span', null, 'of ' + m.quality_max + ' answers right'));
+      c.appendChild(s);
+      var segs = el('div', 'bm-segs');
+      segs.setAttribute('role', 'img');
+      segs.setAttribute('aria-label', m.quality + ' of ' + m.quality_max + ' answers right');
+      for (var i = 0; i < m.quality_max; i++) segs.appendChild(el('i', 'bm-seg' + (i < m.quality ? ' on' : '')));
+      c.appendChild(segs);
+      var dl = el('dl', 'bm-dl');
+      [
+        ['Writing speed', m.words_per_s == null ? 'Not timed fairly' : f1(m.words_per_s) + ' words/s'],
+        ['First reply, quick question', secs(m.wait_short_s) + ' s'],
+        ['Wait on long log', m.wait_long_s == null ? 'Not timed fairly' : f1(m.wait_long_s) + ' s'],
+        ['Memory in use', f1(m.loaded_gb) + ' of ' + m.ram_gb + ' GB'],
+        ['Moved to disk', m.swap_mb > 0 ? f0(m.swap_mb) + ' MB' : 'None'],
+        ['Size on disk', f1(m.size_gb) + ' GB'],
+        ['First load', f1(m.cold_load_s) + ' s']
+      ].forEach(function (p) { dl.append(el('dt', null, p[0]), el('dd', null, p[1])); });
+      c.appendChild(dl);
+      c.appendChild(el('p', 'bm-verdict', m.verdict));
+      wrap.appendChild(c);
+    });
+    host.replaceChildren(wrap);
+  });
+})();
+</script>
+</body>
+</html>
